@@ -1,0 +1,20 @@
+# Discord Bot Dependencies
+
+# Core Discord library with voice support
+discord.py[voice]>=2.3.0
+
+# Audio processing
+PyNaCl>=1.5.0
+ffmpeg-python>=0.2.0
+
+# YouTube and audio downloading
+yt-dlp>=2023.10.0
+
+# Spotify integration (optional but recommended)
+spotipy>=2.23.0
+
+# HTTP requests for AI features
+aiohttp>=3.9.0
+
+# Async support
+asyncio

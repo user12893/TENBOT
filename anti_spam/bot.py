@@ -12,12 +12,14 @@ Features:
 ✅ Analytics Dashboard
 ✅ Content Curation
 ✅ AI Features (optional)
+✅ Music Player (YouTube, Spotify, queue system)
 
 Setup:
 1. Save this as bot.py
 2. Replace BOT_TOKEN with your token
-3. pip install discord.py aiohttp
-4. python bot.py
+3. pip install -r requirements.txt
+4. Install FFmpeg on your system
+5. python bot.py
 """
 
 import discord
@@ -506,7 +508,7 @@ async def on_ready():
     load_data()
     print(f'✅ {bot.user} is online!')
     print(f'📊 Monitoring {len(bot.guilds)} server(s)')
-    
+
     for guild in bot.guilds:
         for channel_name in [MOD_LOG_CHANNEL, LEVEL_UP_CHANNEL, BEST_OF_CHANNEL]:
             if not discord.utils.get(guild.channels, name=channel_name):
@@ -515,7 +517,14 @@ async def on_ready():
                     print(f"📢 Created #{channel_name}")
                 except:
                     pass
-    
+
+    # Load music cog
+    try:
+        await bot.load_extension('music')
+        print('🎵 Music commands loaded!')
+    except Exception as e:
+        print(f'❌ Error loading music: {e}')
+
     try:
         synced = await bot.tree.sync()
         print(f'✅ Synced {len(synced)} commands')
@@ -1067,6 +1076,18 @@ if __name__ == "__main__":
     /warning_leaderboard - Users with most warnings (mod only)
     /practice_pitch - AI pitch feedback (if enabled)
     /summarize - AI channel summary (if enabled)
+
+    MUSIC COMMANDS:
+    /play <song or URL> - Play music from YouTube/Spotify
+    /pause - Pause the current song
+    /resume - Resume playback
+    /skip - Skip to next song
+    /stop - Stop playing and clear queue
+    /queue - Show song queue
+    /nowplaying - Show current song
+    /volume <0-100> - Set volume level
+    /loop - Toggle loop mode
+    /leave - Leave voice channel
     """
     
     if BOT_TOKEN == 'YOUR_BOT_TOKEN':
