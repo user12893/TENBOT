@@ -209,6 +209,11 @@ CREATE TABLE IF NOT EXISTS gamification (
     level_ups INTEGER DEFAULT 0,
     achievements_unlocked INTEGER DEFAULT 0,
 
+    -- Prestige System
+    prestige_count INTEGER DEFAULT 0,
+    xp_multiplier REAL DEFAULT 1.0,
+    last_prestige_date TIMESTAMP,
+
     FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
 
@@ -431,6 +436,56 @@ CREATE TABLE IF NOT EXISTS server_stats (
 );
 
 CREATE INDEX IF NOT EXISTS idx_stats_date ON server_stats(stat_date);
+
+-- ============================================================================
+-- ENHANCED GAMIFICATION TABLES
+-- ============================================================================
+
+-- User Badges Table
+CREATE TABLE IF NOT EXISTS user_badges (
+    badge_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    badge_key TEXT NOT NULL,
+
+    -- Badge info
+    badge_name TEXT NOT NULL,
+    badge_description TEXT,
+    rarity TEXT DEFAULT 'common',  -- common, uncommon, rare, epic, legendary
+
+    -- Meta
+    earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES users(user_id),
+    UNIQUE(user_id, badge_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_badges_user ON user_badges(user_id);
+CREATE INDEX IF NOT EXISTS idx_badges_rarity ON user_badges(rarity);
+
+-- Milestones Table
+CREATE TABLE IF NOT EXISTS milestones (
+    milestone_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+
+    -- Milestone details
+    milestone_type TEXT NOT NULL,  -- messages, xp, voice, etc.
+    milestone_value INTEGER NOT NULL,
+    reward_xp INTEGER DEFAULT 0,
+
+    -- Meta
+    achieved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES users(user_id),
+    UNIQUE(user_id, milestone_type, milestone_value)
+);
+
+CREATE INDEX IF NOT EXISTS idx_milestones_user ON milestones(user_id);
+
+-- Add prestige fields to gamification table (if not exists)
+-- Note: These are added via ALTER TABLE in migration if needed
+-- prestige_count INTEGER DEFAULT 0
+-- xp_multiplier REAL DEFAULT 1.0
+-- last_prestige_date TIMESTAMP
 
 -- ============================================================================
 -- VIEWS FOR COMMON QUERIES
