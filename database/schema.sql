@@ -541,6 +541,24 @@ WHERE trust_score >= 40  -- Only show trusted members
 ORDER BY total_xp DESC;
 
 -- ============================================================================
+-- VOICE SESSIONS TABLE
+-- ============================================================================
+-- Track voice channel participation sessions
+CREATE TABLE IF NOT EXISTS voice_sessions (
+    session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    left_at TIMESTAMP,
+    duration_minutes REAL DEFAULT 0,
+
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_voice_sessions_user ON voice_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_voice_sessions_joined ON voice_sessions(joined_at);
+
+-- ============================================================================
 -- TRIGGERS
 -- ============================================================================
 

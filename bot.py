@@ -28,7 +28,10 @@ import config
 from database import Database, get_db
 
 # Import modules
-from modules import get_spam_detector, get_image_detector, get_trust_system
+from modules import (
+    get_spam_detector, get_image_detector, get_trust_system,
+    get_reputation_system, get_analytics_system, get_enhanced_gamification
+)
 
 # Import utilities
 from utils import (
@@ -62,6 +65,9 @@ class TenBot(commands.Bot):
         self.spam_detector = None
         self.image_detector = None
         self.trust_system = None
+        self.reputation_system = None
+        self.analytics_system = None
+        self.enhanced_gamification = None
 
     async def setup_hook(self):
         """
@@ -78,6 +84,9 @@ class TenBot(commands.Bot):
         self.spam_detector = get_spam_detector()
         self.image_detector = get_image_detector()
         self.trust_system = get_trust_system()
+        self.reputation_system = get_reputation_system()
+        self.analytics_system = get_analytics_system()
+        self.enhanced_gamification = get_enhanced_gamification()
 
         print("✅ All modules initialized!")
 
@@ -85,9 +94,13 @@ class TenBot(commands.Bot):
         try:
             from commands.mod_commands import ModerationCommands
             from commands.admin_commands import AdminCommands
+            from commands.analytics_commands import AnalyticsReputationCommands
+            from commands.gamification_commands import GamificationCommands
 
             await self.add_cog(ModerationCommands(self))
             await self.add_cog(AdminCommands(self))
+            await self.add_cog(AnalyticsReputationCommands(self))
+            await self.add_cog(GamificationCommands(self))
             print("✅ Command cogs loaded!")
         except Exception as e:
             print(f"⚠️  Warning: Could not load command cogs: {e}")
@@ -112,6 +125,15 @@ class TenBot(commands.Bot):
 
         if not self.cleanup_old_data.is_running():
             self.cleanup_old_data.start()
+
+        if not self.update_reputation_scores.is_running():
+            self.update_reputation_scores.start()
+
+        if not self.update_trust_scores.is_running():
+            self.update_trust_scores.start()
+
+        if not self.check_daily_streaks.is_running():
+            self.check_daily_streaks.start()
 
     async def close(self):
         """
@@ -165,6 +187,120 @@ async def cleanup_old_data():
         print(f"🧹 Database cleanup completed at {datetime.now().strftime('%H:%M:%S')}")
     except Exception as e:
         print(f"❌ Cleanup failed: {e}")
+
+
+@tasks.loop(hours=6)
+async def update_reputation_scores():
+    """Recalculate reputation scores periodically."""
+    try:
+        db = await get_db()
+
+        # Get all active users (posted in last 30 days)
+        active_users = await db.fetch_all(
+            """
+            SELECT DISTINCT user_id
+            FROM message_history
+            WHERE created_at >= datetime('now', '-30 days')
+            """, ()
+        )
+
+        if not active_users:
+            return
+
+        # Recalculate reputation for active users
+        for row in active_users:
+            user_id = row['user_id']
+
+            # Get member object (need for reputation calculation)
+            for guild in bot.guilds:
+                try:
+                    member = await guild.fetch_member(int(user_id))
+                    if member:
+                        await bot.reputation_system.calculate_reputation(member)
+                        break
+                except:
+                    continue
+
+        print(f"🏆 Updated reputation for {len(active_users)} active users")
+    except Exception as e:
+        print(f"❌ Reputation update failed: {e}")
+
+
+@tasks.loop(hours=12)
+async def update_trust_scores():
+    """Recalculate trust scores periodically."""
+    try:
+        db = await get_db()
+
+        # Get all users active in last 7 days
+        active_users = await db.fetch_all(
+            """
+            SELECT DISTINCT user_id
+            FROM message_history
+            WHERE created_at >= datetime('now', '-7 days')
+            """, ()
+        )
+
+        if not active_users:
+            return
+
+        # Recalculate trust
+        for row in active_users:
+            user_id = row['user_id']
+
+            for guild in bot.guilds:
+                try:
+                    member = await guild.fetch_member(int(user_id))
+                    if member:
+                        await bot.trust_system.calculate_trust_score(member)
+                        break
+                except:
+                    continue
+
+        print(f"🔒 Updated trust scores for {len(active_users)} active users")
+    except Exception as e:
+        print(f"❌ Trust update failed: {e}")
+
+
+@tasks.loop(hours=1)
+async def check_daily_streaks():
+    """Check and update daily streaks for all users."""
+    try:
+        db = await get_db()
+
+        # Get all users with active streaks
+        users_with_streaks = await db.fetch_all(
+            """
+            SELECT user_id, last_active_date
+            FROM gamification
+            WHERE current_streak_days > 0
+            """, ()
+        )
+
+        for row in users_with_streaks:
+            user_id = row['user_id']
+            last_active = row['last_active_date']
+
+            if last_active:
+                last_date = datetime.fromisoformat(last_active).date()
+                today = datetime.now().date()
+                days_diff = (today - last_date).days
+
+                # Streak broken (missed a day)
+                if days_diff > 1:
+                    await db.execute(
+                        """
+                        UPDATE gamification
+                        SET current_streak_days = 0
+                        WHERE user_id = ?
+                        """,
+                        (user_id,)
+                    )
+                    print(f"💔 Streak broken for user {user_id}")
+
+        print(f"🔥 Checked streaks for {len(users_with_streaks)} users")
+    except Exception as e:
+        print(f"❌ Streak check failed: {e}")
 
 
 # ============================================================================
@@ -261,7 +397,16 @@ async def on_message(message: discord.Message):
 
     # ====== GAMIFICATION ======
     if config.FEATURES['gamification']:
+        # Update daily streak
+        await bot.enhanced_gamification.update_daily_streak(user_id)
+
+        # Award XP
         await handle_xp_gain(message.author, message.guild, 'message')
+
+        # Check message milestones
+        user_data = await db.get_user(user_id)
+        total_messages = user_data.get('total_messages', 0) if user_data else 0
+        await bot.enhanced_gamification.check_milestone(user_id, 'messages', total_messages)
 
     # Process commands
     await bot.process_commands(message)
@@ -296,6 +441,198 @@ async def on_reaction_add(reaction: discord.Reaction, user: discord.User):
                 'reaction',
                 config.XP_PER_REACTION_RECEIVED
             )
+
+
+@bot.event
+async def on_voice_state_update(
+    member: discord.Member,
+    before: discord.VoiceState,
+    after: discord.VoiceState
+):
+    """
+    Track voice channel participation.
+    """
+    if member.bot:
+        return
+
+    db = await get_db()
+    user_id = str(member.id)
+
+    # User joined voice channel
+    if before.channel is None and after.channel is not None:
+        await db.execute(
+            """
+            INSERT INTO voice_sessions (user_id, channel_id, joined_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            """,
+            (user_id, str(after.channel.id))
+        )
+
+    # User left voice channel
+    elif before.channel is not None and after.channel is None:
+        # Calculate session duration
+        session = await db.fetch_one(
+            """
+            SELECT joined_at FROM voice_sessions
+            WHERE user_id = ? AND left_at IS NULL
+            ORDER BY joined_at DESC LIMIT 1
+            """,
+            (user_id,)
+        )
+
+        if session:
+            joined_at = datetime.fromisoformat(session['joined_at'])
+            duration_minutes = (datetime.now() - joined_at).total_seconds() / 60
+
+            # Update session
+            await db.execute(
+                """
+                UPDATE voice_sessions
+                SET left_at = CURRENT_TIMESTAMP, duration_minutes = ?
+                WHERE user_id = ? AND left_at IS NULL
+                """,
+                (duration_minutes, user_id)
+            )
+
+            # Update total voice time
+            await db.increment_user_stat(user_id, 'total_voice_minutes', int(duration_minutes))
+
+            # Award voice XP (if session > 5 minutes)
+            if config.FEATURES['gamification'] and duration_minutes >= 5:
+                xp_amount = int(duration_minutes) * config.XP_PER_VOICE_MINUTE
+                await handle_xp_gain(member, member.guild, 'voice', xp_amount)
+
+                # Check voice milestone
+                user_data = await db.get_user(user_id)
+                total_voice = user_data.get('total_voice_minutes', 0) if user_data else 0
+                await bot.enhanced_gamification.check_milestone(user_id, 'voice_minutes', total_voice)
+
+
+# ============================================================================
+# BADGE & ACHIEVEMENT CHECKING
+# ============================================================================
+
+async def check_and_award_badges(user: discord.Member, guild: discord.Guild):
+    """
+    Check and award badges based on user activity patterns.
+
+    Args:
+        user: Discord Member
+        guild: Discord Guild
+    """
+    db = await get_db()
+    user_id = str(user.id)
+
+    # Get user stats
+    user_data = await db.get_user(user_id)
+    if not user_data:
+        return
+
+    gamif_data = await db.fetch_one(
+        "SELECT * FROM gamification WHERE user_id = ?",
+        (user_id,)
+    )
+    if not gamif_data:
+        return
+
+    badges_to_award = []
+
+    # Check for message milestones
+    messages = user_data.get('total_messages', 0)
+    if messages >= 100 and not await has_badge(user_id, 'century_club'):
+        badges_to_award.append('century_club')
+    if messages >= 500 and not await has_badge(user_id, 'message_master'):
+        badges_to_award.append('message_master')
+    if messages >= 1000 and not await has_badge(user_id, 'chatterbox'):
+        badges_to_award.append('chatterbox')
+
+    # Check for streak badges
+    streak = gamif_data.get('current_streak_days', 0)
+    if streak >= 7 and not await has_badge(user_id, 'week_warrior'):
+        badges_to_award.append('week_warrior')
+    if streak >= 30 and not await has_badge(user_id, 'monthly_legend'):
+        badges_to_award.append('monthly_legend')
+    if streak >= 100 and not await has_badge(user_id, 'unstoppable'):
+        badges_to_award.append('unstoppable')
+
+    # Check for voice badges
+    voice_hours = user_data.get('total_voice_minutes', 0) / 60
+    if voice_hours >= 10 and not await has_badge(user_id, 'voice_champion'):
+        badges_to_award.append('voice_champion')
+    if voice_hours >= 50 and not await has_badge(user_id, 'voice_legend'):
+        badges_to_award.append('voice_legend')
+
+    # Check for reaction badges
+    reactions_given = user_data.get('total_reactions_given', 0)
+    if reactions_given >= 100 and not await has_badge(user_id, 'super_supporter'):
+        badges_to_award.append('super_supporter')
+    if reactions_given >= 500 and not await has_badge(user_id, 'reaction_royalty'):
+        badges_to_award.append('reaction_royalty')
+
+    # Check for time-based badges
+    current_hour = datetime.now().hour
+    if current_hour < 6 and not await has_badge(user_id, 'early_bird'):
+        badges_to_award.append('early_bird')
+    if current_hour >= 22 and not await has_badge(user_id, 'night_owl'):
+        badges_to_award.append('night_owl')
+
+    # Award badges
+    for badge_key in badges_to_award:
+        try:
+            await bot.enhanced_gamification.award_badge(user_id, badge_key)
+            print(f"🏅 Awarded badge '{badge_key}' to {user.name}")
+
+            # Optionally notify user
+            badge = bot.enhanced_gamification.BADGES.get(badge_key)
+            if badge:
+                await send_badge_notification(user, guild, badge)
+        except Exception as e:
+            print(f"⚠️  Error awarding badge: {e}")
+
+
+async def has_badge(user_id: str, badge_key: str) -> bool:
+    """Check if user already has a badge."""
+    db = await get_db()
+    result = await db.fetch_value(
+        "SELECT COUNT(*) FROM user_badges WHERE user_id = ? AND badge_key = ?",
+        (user_id, badge_key)
+    )
+    return result > 0
+
+
+async def send_badge_notification(
+    user: discord.Member,
+    guild: discord.Guild,
+    badge: dict
+):
+    """Send notification when user earns a badge."""
+    rarity_colors = {
+        'common': discord.Color.light_grey(),
+        'uncommon': discord.Color.green(),
+        'rare': discord.Color.blue(),
+        'epic': discord.Color.purple(),
+        'legendary': discord.Color.gold()
+    }
+
+    embed = create_embed(
+        title="🏅 New Badge Earned!",
+        description=f"{user.mention} earned the **{badge['name']}** badge!\n\n"
+                   f"*{badge['description']}*",
+        color=rarity_colors.get(badge['rarity'], discord.Color.blue())
+    )
+    embed.add_field(name="Rarity", value=badge['rarity'].title())
+    embed.set_thumbnail(url=user.display_avatar.url)
+
+    # Find badges channel or use general
+    channel = discord.utils.get(guild.channels, name='badges')
+    if not channel:
+        channel = discord.utils.get(guild.channels, name='general')
+
+    if channel:
+        try:
+            await channel.send(embed=embed)
+        except:
+            pass  # Silently fail if can't send
 
 
 # ============================================================================
@@ -495,6 +832,12 @@ async def handle_xp_gain(
     # Handle level up
     if result['leveled_up']:
         await handle_level_up(user, guild, result['old_level'], result['new_level'])
+
+    # Check for XP milestones
+    await bot.enhanced_gamification.check_milestone(user_id, 'xp', result['total_xp'])
+
+    # Check for badges based on activity
+    await check_and_award_badges(user, guild)
 
 
 async def handle_level_up(
