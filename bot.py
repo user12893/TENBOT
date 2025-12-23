@@ -91,23 +91,58 @@ class TenBot(commands.Bot):
         print("✅ All modules initialized!")
 
         # Load command cogs
+        print("📦 Loading command cogs...")
+
+        # Load moderation commands
         try:
             from commands.mod_commands import ModerationCommands
-            from commands.admin_commands import AdminCommands
-            from commands.analytics_commands import AnalyticsReputationCommands
-            from commands.gamification_commands import GamificationCommands
-
             await self.add_cog(ModerationCommands(self))
-            await self.add_cog(AdminCommands(self))
-            await self.add_cog(AnalyticsReputationCommands(self))
-            await self.add_cog(GamificationCommands(self))
-            print("✅ Command cogs loaded!")
+            print("  ✅ ModerationCommands loaded")
         except Exception as e:
-            print(f"⚠️  Warning: Could not load command cogs: {e}")
+            print(f"  ❌ Failed to load ModerationCommands: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # Load admin commands
+        try:
+            from commands.admin_commands import AdminCommands
+            await self.add_cog(AdminCommands(self))
+            print("  ✅ AdminCommands loaded")
+        except Exception as e:
+            print(f"  ❌ Failed to load AdminCommands: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # Load analytics commands
+        try:
+            from commands.analytics_commands import AnalyticsReputationCommands
+            await self.add_cog(AnalyticsReputationCommands(self))
+            print("  ✅ AnalyticsReputationCommands loaded")
+        except Exception as e:
+            print(f"  ❌ Failed to load AnalyticsReputationCommands: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # Load gamification commands
+        try:
+            from commands.gamification_commands import GamificationCommands
+            await self.add_cog(GamificationCommands(self))
+            print("  ✅ GamificationCommands loaded")
+        except Exception as e:
+            print(f"  ❌ Failed to load GamificationCommands: {e}")
+            import traceback
+            traceback.print_exc()
+
+        print("✅ Finished loading command cogs!")
 
         # Sync slash commands
-        await self.tree.sync()
-        print("✅ Slash commands synced!")
+        try:
+            synced = await self.tree.sync()
+            print(f"✅ Synced {len(synced)} slash commands globally!")
+        except Exception as e:
+            print(f"❌ Failed to sync commands: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def on_ready(self):
         """
