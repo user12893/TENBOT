@@ -81,6 +81,17 @@ class TenBot(commands.Bot):
 
         print("✅ All modules initialized!")
 
+        # Load command cogs
+        try:
+            from commands.mod_commands import ModerationCommands
+            from commands.admin_commands import AdminCommands
+
+            await self.add_cog(ModerationCommands(self))
+            await self.add_cog(AdminCommands(self))
+            print("✅ Command cogs loaded!")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not load command cogs: {e}")
+
         # Sync slash commands
         await self.tree.sync()
         print("✅ Slash commands synced!")
